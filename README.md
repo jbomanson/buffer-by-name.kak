@@ -55,5 +55,8 @@ like in the installation examples for added convenience.
 ## Alternatives
 
 - [kakoune-buffers](https://github.com/Delapouite/kakoune-buffers)
-  eases navigation between opened buffers by showing an info box and the ability
-  to jump to specific buffers.
+  eases navigation between opened buffers by showing an info box and then giving
+  the ability to jump to specific buffers.
+  Whereas both kakoune-buffers and buffer-by-name.kak change the way you
+  navigate between buffers, buffer-by-name.kak does it more subtly and by
+  showing less information.
