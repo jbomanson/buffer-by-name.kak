@@ -1,0 +1,332 @@
+#! /usr/bin/env ruby
+
+# Test usage:
+# candidates --test
+# Test usage with entr:
+# ls -1 candidates | entr -c /_ --test
+
+require "json"
+require "shellwords"
+
+class SplitFile
+  def initialize(file)
+    @original = file
+    @parts = file.split("/")
+    @dividing_index = @parts.length - 1
+  end
+
+  def rarify
+    @dividing_index -= 1
+    nil
+  end
+
+  def important_part
+    @parts[@dividing_index..-1].join("/")
+  end
+
+  def filtered
+    @parts.last +
+      if (rest = @parts[@dividing_index..-2]).empty?
+        ""
+      else
+        "(" + rest.join("/") + ")"
+      end
+  end
+
+  def original
+    @original
+  end
+end
+
+def files_to_compact_split_files(files)
+  split_files = files.uniq.map {|file| SplitFile.new(file)}
+  eventful = true
+  while eventful
+    groups = split_files.group_by {|split_file| split_file.important_part}
+    eventful = false
+    groups.each do |key, array|
+      if array.size > 1
+        eventful = true
+        array.each {|split_file| split_file.rarify}
+      end
+    end
+  end
+  split_files
+end
+
+def filter(files)
+  files_to_compact_split_files(files).
+    map {|split_file| split_file.filtered}.
+    sort
+end
+
+def invert(files, filtered_file)
+  split_file =
+    files_to_compact_split_files(files).
+    find {|split_file| split_file.filtered == filtered_file}
+  unless split_file
+    raise "Failed to map #{filtered_file} back to a file in:\n" +
+      files.map(&"\t%s".method(:%))
+  end
+  split_file.original
+end
+
+def test_filter(test_case_hash)
+  received_output = filter(test_case_hash["input"])
+  expected_output = test_case_hash["expected_output"].sort
+  if received_output == expected_output
+    puts "- [x] " + test_case_hash["description"]
+    true
+  else
+    puts "- [ ] " + test_case_hash["description"]
+    puts
+    e_not_r = (expected_output - received_output)
+    r_not_e = (received_output - expected_output)
+    explained = false
+    unless e_not_r == e_not_r.sort
+      explained = true
+      puts "Expected output is not sorted"
+    end
+    unless r_not_e == r_not_e.sort
+      explained = true
+      puts "Received output is not sorted"
+    end
+    unless e_not_r == e_not_r.uniq
+      explained = true
+      puts "Expected output is not unique"
+    end
+    unless r_not_e == r_not_e.uniq
+      explained = true
+      puts "Received output is not unique"
+    end
+    unless expected_output.size == received_output.size
+      explained = true
+      puts "Expected #{expected_output.size}, " +
+        "but got #{received_output.size} elements"
+    end
+    unless e_not_r.empty?
+      explained = true
+      puts "Expected but not received:"
+      puts e_not_r.map(&"\t%s".method(:%))
+    end
+    unless r_not_e.empty?
+      explained = true
+      puts "Received but not expected:"
+      puts r_not_e.map(&"\t%s".method(:%))
+    end
+    unless explained
+      expected_output.zip(received_output).each_with_index do |pair, index|
+        expected_file, received_file = pair
+        unless expected_file == received_file
+          puts "At index #{index} expected #{expected_file.inspect}, " +
+               "but got #{received_file.inspect}"
+        end
+      end
+    end
+    puts
+    false
+  end
+end
+
+def test_invert(test_case_hash)
+  input_files = test_case_hash["input"]
+  split_files = files_to_compact_split_files(input_files)
+  errors =
+    split_files.map do |split_file|
+      inverted_file = invert(input_files, split_file.filtered)
+      unless split_file.original == inverted_file
+        [split_file.original, split_file.filtered, inverted_file]
+      end
+    end.compact
+  if errors.empty?
+    puts "- [x] " + test_case_hash["description"]
+    true
+  else
+    puts "- [ ] " + test_case_hash["description"]
+    puts
+    puts "Failed to invert #{errors.size} / #{split_files.size} files:"
+    file_width = input_files.map {|file| file.size}.max
+    format = "%" + file_width.to_s + "s"
+    format = "\t#{format}  #{format}  #{format}"
+    puts format % ["original file", "filtered file", "inverted filtered file"]
+    puts format % (["-" * file_width] * 3)
+    puts(errors.map(&format.method(:%)))
+    puts
+    false
+  end
+end
+
+case ARGV.first
+when "--test"
+  # Test mode.
+  json_string = File.
+    readlines($0).
+    drop_while {|line| line != "__END__\n"}.
+    drop(1).
+    join("\n")
+  test_cases = JSON.parse(json_string)
+
+  puts "Test filter:"
+  filter_error_count = 0
+  test_cases.each do |test_case_hash|
+    filter_error_count += test_filter(test_case_hash) ? 0 : 1
+  end
+
+  puts "Test invert:"
+  invert_error_count = 0
+  test_cases.each do |test_case_hash|
+    invert_error_count += test_invert(test_case_hash) ? 0 : 1
+  end
+
+  puts "Test summary:"
+  puts "#{filter_error_count} / #{test_cases.size} filter errors"
+  puts "#{invert_error_count} / #{test_cases.size} invert errors"
+when "--filter"
+  puts filter(STDIN.readlines.map(&:chomp))
+when "--invert"
+  puts invert(STDIN.readlines.map(&:chomp), ARGV.last)
+else
+  STDERR.puts "Usage:"
+  STDERR.puts "        candidates --test"
+  STDERR.puts "        candidates --filter                 <input_files"
+  STDERR.puts "        candidates --invert <filtered_file> <input_files"
+end
+
+# Test cases:
+__END__
+[
+  {
+    "description": "tiny unambiguous example",
+    "input": [
+      "base/one.txt",
+      "base/two.txt"
+    ],
+    "expected_output": [
+      "one.txt",
+      "two.txt"
+    ]
+  },
+  {
+    "description": "tiny ambiguous example",
+    "input": [
+      "base/one/file.txt",
+      "base/two/file.txt"
+    ],
+    "expected_output": [
+      "file.txt(one)",
+      "file.txt(two)"
+    ]
+  },
+  {
+    "description": "tiny but deeply ambiguous example",
+    "input": [
+      "base/one/dir/file.txt",
+      "base/two/dir/file.txt"
+    ],
+    "expected_output": [
+      "file.txt(one/dir)",
+      "file.txt(two/dir)"
+    ]
+  },
+  {
+    "description": "real-life example from a project called parse_again",
+    "input": [
+      "*debug*",
+      "spec/spec_helper.cr",
+      "spec/parse_again/tree_builder_spec.cr",
+      "spec/parse_again/dsl/bool_spec.cr",
+      "spec/parse_again/dsl/explicit_spec.cr",
+      "spec/parse_again/dsl/nilable_spec.cr",
+      "spec/parse_again/parser_lookahead_spec.cr",
+      "spec/parse_again/example_parser_spec_helper.cr",
+      "spec/parse_again/parser_spec.cr",
+      "spec/parse_again/example/asp_core/parser_heavy_spec.cr",
+      "spec/parse_again/example/asp_core/spec_helper.cr",
+      "spec/parse_again/example/asp_core/parser_spec.cr",
+      "spec/parse_again/example/asp_core/comparator_spec.cr",
+      "spec/parse_again/example/asp_core/tree_spec.cr",
+      "spec/parse_again/example/json/explicit_parser_spec.cr",
+      "spec/parse_again/example/json/parser_spec.cr",
+      "spec/parse_again/parser_non_char_spec.cr",
+      "spec/parse_again/tokenizer_spec.cr",
+      "spec/parse_again/parser_review_spec.cr",
+      "src/parse_again.cr",
+      "src/parse_again/reviewable.cr",
+      "src/parse_again/state.cr",
+      "src/parse_again/piece.cr",
+      "src/parse_again/position.cr",
+      "src/parse_again/dsl/bool.cr",
+      "src/parse_again/dsl/ancestor.cr",
+      "src/parse_again/dsl/explicit.cr",
+      "src/parse_again/dsl/nilable.cr",
+      "src/parse_again/application.cr",
+      "src/parse_again/error.cr",
+      "src/parse_again/tree_builder.cr",
+      "src/parse_again/terminal/bool.cr",
+      "src/parse_again/terminal/ancestor.cr",
+      "src/parse_again/terminal/nilable.cr",
+      "src/parse_again/verbose_module.cr",
+      "src/parse_again/tokenizer.cr",
+      "src/parse_again/parser.cr",
+      "src/parse_again/verbose_state.cr",
+      "src/parse_again/version.cr",
+      "src/parse_again/example/asp_core/parser.cr",
+      "src/parse_again/example/asp_core/node.cr",
+      "src/parse_again/example/asp_core/tree.cr",
+      "src/parse_again/example/asp_core/comparator.cr",
+      "src/parse_again/example/json/explicit_parser.cr",
+      "src/parse_again/example/json/parser.cr",
+      "src/parse_again/old_node.cr",
+      "src/parse_again/tree.cr"
+    ],
+    "expected_output": [
+      "ancestor.cr(dsl)",
+      "ancestor.cr(terminal)",
+      "application.cr",
+      "bool.cr(dsl)",
+      "bool.cr(terminal)",
+      "bool_spec.cr",
+      "comparator.cr",
+      "comparator_spec.cr",
+      "*debug*",
+      "error.cr",
+      "example_parser_spec_helper.cr",
+      "explicit.cr",
+      "explicit_parser.cr",
+      "explicit_parser_spec.cr",
+      "explicit_spec.cr",
+      "nilable.cr(dsl)",
+      "nilable.cr(terminal)",
+      "nilable_spec.cr",
+      "node.cr",
+      "old_node.cr",
+      "parse_again.cr",
+      "parser.cr(asp_core)",
+      "parser.cr(json)",
+      "parser.cr(parse_again)",
+      "parser_heavy_spec.cr",
+      "parser_lookahead_spec.cr",
+      "parser_non_char_spec.cr",
+      "parser_review_spec.cr",
+      "parser_spec.cr(asp_core)",
+      "parser_spec.cr(json)",
+      "parser_spec.cr(parse_again)",
+      "piece.cr",
+      "position.cr",
+      "reviewable.cr",
+      "spec_helper.cr(asp_core)",
+      "spec_helper.cr(spec)",
+      "state.cr",
+      "tokenizer.cr",
+      "tokenizer_spec.cr",
+      "tree_builder.cr",
+      "tree_builder_spec.cr",
+      "tree.cr(asp_core)",
+      "tree.cr(parse_again)",
+      "tree_spec.cr",
+      "verbose_module.cr",
+      "verbose_state.cr",
+      "version.cr"
+    ]
+  }
+]
