@@ -12,9 +12,11 @@ Here is a comparison:
 ![screenshot](docs/screenshot.png)
 
 When buffer names are not distinctive enough, `:buffer-by-name` intelligently
-shows just enough of the directory components of buffers to disambiguate them.
-The format of such buffers is `name(directory)`, so that the buffer names
-consistently comes first.
+shows just enough of the directory components of buffer paths to disambiguate
+them.
+The format for such buffers is `name(directory)`.
+This format guarantees that buffer names always come first, regardless of
+whether directory components are needed for disambiguation.
 
 ## Installation
 
