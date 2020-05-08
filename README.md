@@ -31,11 +31,10 @@ You can install **buffer-by-name.kak** using the
 your `kakrc` with:
 
 ```kak
-plug "jbomanson/buffer-by-name.kak" config %{
-    require-module buffer-by-name
+plug "jbomanson/buffer-by-name.kak" defer buffer-by-name %{
     # Optional suggestion:
     alias global b buffer-by-name
-}
+} demand
 ```
 
 Then restart Kakoune and run `:plug-install`.
