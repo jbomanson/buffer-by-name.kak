@@ -4,6 +4,10 @@ declare-option -hidden str buffer_by_name_path %sh(
 
 provide-module buffer-by-name %~
 
+evaluate-commands %sh(
+    which ruby >/dev/null && printf "%s" "nop"
+) fail "buffer-by-name: unsatisfied dependency: ruby"
+
 define-command buffer-by-name \
     -params 1 \
     -docstring "buffer-by-name <name>: open a buffer by name.

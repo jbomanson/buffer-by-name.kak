@@ -18,6 +18,10 @@ The format for such buffers is `name(directory)`.
 This format guarantees that buffer names always come first, regardless of
 whether directory components are needed for disambiguation.
 
+## Dependencies
+
+- ruby
+
 ## Installation
 
 ### With plug.kak
